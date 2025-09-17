@@ -1,11 +1,11 @@
 ---
-- name: Ensure all VMs in namespaces have cusa network and interface
+- name: Ensure all VMs in canon-test namespace have cusa network and interface
   hosts: localhost
   gather_facts: no
   vars:
     vm_namespaces:
-      - canon-test
-      
+      - canon-test   # <-- only this namespace
+
   tasks:
     - name: Get all VMs in each namespace
       kubernetes.core.k8s_info:
@@ -26,7 +26,7 @@
       loop: "{{ vms }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
-      when: "'cusa' not in [n.name for n in (item.1.spec.template.spec.networks | default([]))]"
+      when: "'cusa' not in (item.1.spec.template.spec.networks | default([]) | map(attribute='name') | list)"
       kubernetes.core.k8s:
         api_version: kubevirt.io/v1
         kind: VirtualMachine
@@ -41,14 +41,12 @@
                   - name: cusa
                     multus:
                       networkName: cusa-canon
-      register: network_patch
-      changed_when: true
 
     - name: Patch VM to add cusa interface
       loop: "{{ vms }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
-      when: "'cusa' not in [i.name for i in (item.1.spec.template.spec.domain.devices.interfaces | default([]))]"
+      when: "'cusa' not in (item.1.spec.template.spec.domain.devices.interfaces | default([]) | map(attribute='name') | list)"
       kubernetes.core.k8s:
         api_version: kubevirt.io/v1
         kind: VirtualMachine
@@ -64,7 +62,13 @@
                     interfaces:
                       - name: cusa
                         bridge: {}
-      register: interface_patch
-      changed_when: true
+
+    - name: Debug patched VMs
+      debug:
+        msg: "Patched VM {{ item.1.metadata.name }} in namespace {{ item.0.ns }}"
+      loop: "{{ vms }}"
+      when: >
+        ('cusa' not in (item.1.spec.template.spec.networks | default([]) | map(attribute='name') | list)) or
+        ('cusa' not in (item.1.spec.template.spec.domain.devices.interfaces | default([]) | map(attribute='name') | list))
 
 
