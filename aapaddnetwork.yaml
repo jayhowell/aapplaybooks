@@ -18,13 +18,11 @@
         label: "{{ ns }}"
       register: all_vms
 
-    - name: Process each VM
-      vars:
-        vms: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
-      loop: "{{ vms }}"
+    - name: Ensure cusa network/interface on each VM
+      loop: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
-      tasks:
+      block:
         - name: Set current VM facts
           set_fact:
             vm_networks: "{{ item.1.spec.template.spec.networks | default([]) }}"
@@ -89,4 +87,5 @@
                 definition:
                   spec:
                     running: true
+
 
