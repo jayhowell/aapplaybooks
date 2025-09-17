@@ -18,15 +18,13 @@
         label: "{{ ns }}"
       register: all_vms
 
-- name: Ensure cusa network/interface exist on each VM
-  vars:
-    vms: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
-  block:
     - name: Process each VM
+      vars:
+        vms: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
       loop: "{{ vms }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
-      block:
+      tasks:
         - name: Set current VM facts
           set_fact:
             vm_networks: "{{ item.1.spec.template.spec.networks | default([]) }}"
