@@ -1,33 +1,38 @@
 ---
-- name: Ensure all VMs in namespace have cusa network and interface
+- name: Ensure all VMs in namespaces have cusa network and interface
   hosts: localhost
   gather_facts: no
   vars:
-    vm_namespace: canon-test   # <--- change once
+    vm_namespaces:
+      - canon-test
 
   tasks:
-    - name: Get all VMs in the namespace
+    - name: Get all VMs in each namespace
       kubernetes.core.k8s_info:
         api_version: kubevirt.io/v1
         kind: VirtualMachine
-        namespace: "{{ vm_namespace }}"
+        namespace: "{{ ns }}"
+      loop: "{{ vm_namespaces }}"
+      loop_control:
+        loop_var: ns
+        label: "{{ ns }}"
       register: all_vms
 
     - name: Ensure cusa network/interface exist on each VM
       vars:
-        vm_networks: "{{ item.spec.template.spec.networks | default([]) }}"
-        vm_interfaces: "{{ item.spec.template.spec.domain.devices.interfaces | default([]) }}"
-      loop: "{{ all_vms.resources }}"
+        vm_networks: "{{ item.1.spec.template.spec.networks | default([]) }}"
+        vm_interfaces: "{{ item.1.spec.template.spec.domain.devices.interfaces | default([]) }}"
+      loop: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
       loop_control:
-        label: "{{ item.metadata.name }}"
+        label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
       block:
         - name: Patch VM to add cusa network
           when: "'cusa' not in [n.name for n in vm_networks]"
           kubernetes.core.k8s:
             api_version: kubevirt.io/v1
             kind: VirtualMachine
-            name: "{{ item.metadata.name }}"
-            namespace: "{{ vm_namespace }}"
+            name: "{{ item.1.metadata.name }}"
+            namespace: "{{ item.0.ns }}"
             merge_type: strategic-merge
             definition:
               spec:
@@ -37,14 +42,15 @@
                       - name: cusa
                         multus:
                           networkName: cusa-canon
+          register: network_patch
 
         - name: Patch VM to add cusa interface
           when: "'cusa' not in [i.name for i in vm_interfaces]"
           kubernetes.core.k8s:
             api_version: kubevirt.io/v1
             kind: VirtualMachine
-            name: "{{ item.metadata.name }}"
-            namespace: "{{ vm_namespace }}"
+            name: "{{ item.1.metadata.name }}"
+            namespace: "{{ item.0.ns }}"
             merge_type: strategic-merge
             definition:
               spec:
@@ -55,3 +61,27 @@
                         interfaces:
                           - name: cusa
                             bridge: {}
+          register: interface_patch
+
+        - name: Restart VM if patched
+          when: network_patch is changed or interface_patch is changed
+          block:
+            - name: Stop VM
+              kubernetes.core.k8s:
+                api_version: kubevirt.io/v1
+                kind: VirtualMachine
+                name: "{{ item.1.metadata.name }}"
+                namespace: "{{ item.0.ns }}"
+                definition:
+                  spec:
+                    running: false
+
+            - name: Start VM
+              kubernetes.core.k8s:
+                api_version: kubevirt.io/v1
+                kind: VirtualMachine
+                name: "{{ item.1.metadata.name }}"
+                namespace: "{{ item.0.ns }}"
+                definition:
+                  spec:
+                    running: true
