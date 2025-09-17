@@ -4,7 +4,7 @@
   gather_facts: no
   vars:
     vm_namespaces:
-      - canon-test   # <-- only this namespace
+      - canon-test
 
   tasks:
     - name: Get all VMs in each namespace
@@ -22,7 +22,7 @@
       set_fact:
         vms: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
 
-    - name: Patch VM to add cusa network
+    - name: Add cusa network if missing
       loop: "{{ vms }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
@@ -32,17 +32,14 @@
         kind: VirtualMachine
         name: "{{ item.1.metadata.name }}"
         namespace: "{{ item.0.ns }}"
-        merge_type: strategic-merge
+        merge_type: merge
         definition:
           spec:
             template:
               spec:
-                networks:
-                  - name: cusa
-                    multus:
-                      networkName: cusa-canon
+                networks: "{{ (item.1.spec.template.spec.networks | default([])) + [{'name': 'cusa', 'multus': {'networkName': 'cusa-canon'}}] }}"
 
-    - name: Patch VM to add cusa interface
+    - name: Add cusa interface if missing
       loop: "{{ vms }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
@@ -52,23 +49,14 @@
         kind: VirtualMachine
         name: "{{ item.1.metadata.name }}"
         namespace: "{{ item.0.ns }}"
-        merge_type: strategic-merge
+        merge_type: merge
         definition:
           spec:
             template:
               spec:
                 domain:
                   devices:
-                    interfaces:
-                      - name: cusa
-                        bridge: {}
+                    interfaces: "{{ (item.1.spec.template.spec.domain.devices.interfaces | default([])) + [{'name': 'cusa', 'bridge': {}}] }}"
 
-    - name: Debug patched VMs
-      debug:
-        msg: "Patched VM {{ item.1.metadata.name }} in namespace {{ item.0.ns }}"
-      loop: "{{ vms }}"
-      when: >
-        ('cusa' not in (item.1.spec.template.spec.networks | default([]) | map(attribute='name') | list)) or
-        ('cusa' not in (item.1.spec.template.spec.domain.devices.interfaces | default([]) | map(attribute='name') | list))
 
 
