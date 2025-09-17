@@ -1,0 +1,28 @@
+---
+- name: Test AAP connectivity to ROSA
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: Get all namespaces
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+      register: ns
+
+    - name: Show namespaces
+      debug:
+        msg: "{{ ns.resources | map(attribute='metadata.name') | list }}"
+
+    - name: Create a test ConfigMap in default namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: aap-test-configmap
+            namespace: default
+          data:
+            hello: "AAP to ROSA connection is working!"
