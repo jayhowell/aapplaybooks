@@ -5,7 +5,7 @@
   vars:
     vm_namespaces:
       - canon-test
-
+      
   tasks:
     - name: Get all VMs in each namespace
       kubernetes.core.k8s_info:
@@ -18,79 +18,82 @@
         label: "{{ ns }}"
       register: all_vms
 
-    - name: Add network/interface and restart if needed
-      vars:
+    - name: Set fact with all VMs across namespaces
+      set_fact:
         vms: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
+
+    - name: Patch VM to add cusa network
       loop: "{{ vms }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
-      tasks:
-        - name: Set current VM facts
-          set_fact:
-            vm_networks: "{{ item.1.spec.template.spec.networks | default([]) }}"
-            vm_interfaces: "{{ item.1.spec.template.spec.domain.devices.interfaces | default([]) }}"
-
-        - name: Patch VM to add cusa network
-          when: "'cusa' not in [n.name for n in vm_networks]"
-          kubernetes.core.k8s:
-            api_version: kubevirt.io/v1
-            kind: VirtualMachine
-            name: "{{ item.1.metadata.name }}"
-            namespace: "{{ item.0.ns }}"
-            merge_type: strategic-merge
-            definition:
+      when: "'cusa' not in [n.name for n in (item.1.spec.template.spec.networks | default([]))]"
+      kubernetes.core.k8s:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        name: "{{ item.1.metadata.name }}"
+        namespace: "{{ item.0.ns }}"
+        merge_type: strategic-merge
+        definition:
+          spec:
+            template:
               spec:
-                template:
-                  spec:
-                    networks:
+                networks:
+                  - name: cusa
+                    multus:
+                      networkName: cusa-canon
+      register: network_patch
+      changed_when: true
+
+    - name: Patch VM to add cusa interface
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
+      when: "'cusa' not in [i.name for i in (item.1.spec.template.spec.domain.devices.interfaces | default([]))]"
+      kubernetes.core.k8s:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        name: "{{ item.1.metadata.name }}"
+        namespace: "{{ item.0.ns }}"
+        merge_type: strategic-merge
+        definition:
+          spec:
+            template:
+              spec:
+                domain:
+                  devices:
+                    interfaces:
                       - name: cusa
-                        multus:
-                          networkName: cusa-canon
-          register: network_patch
-          changed_when: true
+                        bridge: {}
+      register: interface_patch
+      changed_when: true
 
-        - name: Patch VM to add cusa interface
-          when: "'cusa' not in [i.name for i in vm_interfaces]"
+    - name: Restart VM if network or interface was patched
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
+      when: (network_patch is defined and network_patch.results[loop.index0].changed) or
+            (interface_patch is defined and interface_patch.results[loop.index0].changed)
+      block:
+        - name: Stop VM
           kubernetes.core.k8s:
             api_version: kubevirt.io/v1
             kind: VirtualMachine
             name: "{{ item.1.metadata.name }}"
             namespace: "{{ item.0.ns }}"
-            merge_type: strategic-merge
             definition:
               spec:
-                template:
-                  spec:
-                    domain:
-                      devices:
-                        interfaces:
-                          - name: cusa
-                            bridge: {}
-          register: interface_patch
-          changed_when: true
+                running: false
 
-        - name: Restart VM if patched
-          when: network_patch is changed or interface_patch is changed
-          block:
-            - name: Stop VM
-              kubernetes.core.k8s:
-                api_version: kubevirt.io/v1
-                kind: VirtualMachine
-                name: "{{ item.1.metadata.name }}"
-                namespace: "{{ item.0.ns }}"
-                definition:
-                  spec:
-                    running: false
+        - name: Start VM
+          kubernetes.core.k8s:
+            api_version: kubevirt.io/v1
+            kind: VirtualMachine
+            name: "{{ item.1.metadata.name }}"
+            namespace: "{{ item.0.ns }}"
+            definition:
+              spec:
+                running: true
 
-            - name: Start VM
-              kubernetes.core.k8s:
-                api_version: kubevirt.io/v1
-                kind: VirtualMachine
-                name: "{{ item.1.metadata.name }}"
-                namespace: "{{ item.0.ns }}"
-                definition:
-                  spec:
-                    running: true
 
 
 
