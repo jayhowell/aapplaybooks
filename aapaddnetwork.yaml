@@ -22,11 +22,24 @@
       set_fact:
         vms: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
 
-    - name: Add cusa network if missing
+    - name: Add cusa network+interface if missing
       loop: "{{ vms }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
-      when: "'cusa' not in (item.1.spec.template.spec.networks | default([]) | map(attribute='name') | list)"
+      vars:
+        existing_networks: "{{ item.1.spec.template.spec.networks | default([]) }}"
+        existing_interfaces: "{{ item.1.spec.template.spec.domain.devices.interfaces | default([]) }}"
+        updated_networks: >-
+          {{ existing_networks + [{'name': 'cusa', 'multus': {'networkName': 'cusa-canon'}}]
+             if 'cusa' not in (existing_networks | map(attribute='name') | list)
+             else existing_networks }}
+        updated_interfaces: >-
+          {{ existing_interfaces + [{'name': 'cusa', 'bridge': {}}]
+             if 'cusa' not in (existing_interfaces | map(attribute='name') | list)
+             else existing_interfaces }}
+      when: >
+        'cusa' not in (existing_networks | map(attribute='name') | list)
+        or 'cusa' not in (existing_interfaces | map(attribute='name') | list)
       kubernetes.core.k8s:
         api_version: kubevirt.io/v1
         kind: VirtualMachine
@@ -37,26 +50,8 @@
           spec:
             template:
               spec:
-                networks: "{{ (item.1.spec.template.spec.networks | default([])) + [{'name': 'cusa', 'multus': {'networkName': 'cusa-canon'}}] }}"
-
-    - name: Add cusa interface if missing
-      loop: "{{ vms }}"
-      loop_control:
-        label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
-      when: "'cusa' not in (item.1.spec.template.spec.domain.devices.interfaces | default([]) | map(attribute='name') | list)"
-      kubernetes.core.k8s:
-        api_version: kubevirt.io/v1
-        kind: VirtualMachine
-        name: "{{ item.1.metadata.name }}"
-        namespace: "{{ item.0.ns }}"
-        merge_type: merge
-        definition:
-          spec:
-            template:
-              spec:
+                networks: "{{ updated_networks }}"
                 domain:
                   devices:
-                    interfaces: "{{ (item.1.spec.template.spec.domain.devices.interfaces | default([])) + [{'name': 'cusa', 'bridge': {}}] }}"
-
-
+                    interfaces: "{{ updated_interfaces }}"
 
