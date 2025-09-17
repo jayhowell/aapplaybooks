@@ -71,7 +71,7 @@
     - name: Replace managed block between markers
       vars:
         corefile_in: "{{ cm_info.resources[0].data.Corefile }}"
-        pattern: "({{ begin_marker | regex_escape }})(?s).*?({{ end_marker | regex_escape }})"
+        pattern: "(?s)({{ begin_marker | regex_escape }}).*?({{ end_marker | regex_escape }})"
         replacement: "\\1\n{{ managed_block }}\n\\2"
       set_fact:
         corefile_out: "{{ corefile_in | regex_replace(pattern, replacement) }}"
