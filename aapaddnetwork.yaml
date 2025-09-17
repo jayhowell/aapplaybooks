@@ -18,6 +18,8 @@
         label: "{{ ns }}"
       register: all_vms
 
+
+
     - name: Ensure cusa network/interface exist on each VM
       loop: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
       loop_control:
