@@ -8,11 +8,9 @@
   vars:
     # ----- customize -----
     dns_namespace: "dns-helpers"          # where your CoreDNS ConfigMap lives
-    coredns_cm_name: "coredns-custom"
-    dns_zone: "cusa.canon.com"
-
-    # Only look at this namespace for VMs
-    vm_namespace: "canon-test"
+    coredns_cm_name: "coredns-custom"     # name of the ConfigMap
+    dns_zone: "cusa.canon.com"            # zone to append
+    vm_namespace: "canon-test"            # namespace with your VMs
 
     # Marker strings in Corefile
     begin_marker: "# BEGIN ANSIBLE-MANAGED HOSTS"
@@ -26,28 +24,19 @@
         namespace: "{{ vm_namespace }}"
       register: vmi_info
 
-    - name: Build host records list (name -> ip)
-      vars:
-        vm_items: "{{ vmi_info.resources | default([]) }}"
+    - name: Initialize managed_hosts
       set_fact:
-        managed_hosts: >-
-          {{
-            vm_items
-            | map('combine', [{
-                'name': item.metadata.name,
-                'ip': (
-                  item.status.interfaces[0].ipAddress
-                  if item.status is defined
-                  and item.status.interfaces is defined
-                  and item.status.interfaces | length > 0
-                  and item.status.interfaces[0].ipAddress is defined
-                  else None
-                )
-              }], recursive=True)
-            | selectattr('ip', 'defined')
-            | selectattr('ip', 'truthy')
-            | list
-          }}
+        managed_hosts: []
+
+    - name: Collect VM names and IPs
+      set_fact:
+        managed_hosts: "{{ managed_hosts + [ { 'name': item.metadata.name, 'ip': item.status.interfaces[0].ipAddress } ] }}"
+      loop: "{{ vmi_info.resources | default([]) }}"
+      when:
+        - item.status is defined
+        - item.status.interfaces is defined
+        - item.status.interfaces | length > 0
+        - item.status.interfaces[0].ipAddress is defined
 
     - name: Render ANSIBLE-MANAGED block content (FQDN + short)
       vars:
@@ -98,3 +87,9 @@
             namespace: "{{ dns_namespace }}"
           data:
             Corefile: "{{ corefile_out }}"
+
+    - name: Note on reload
+      debug:
+        msg: >-
+          ConfigMap updated. CoreDNS should hot-reload (uses 'reload' plugin).
+          If you don't see updates, check the CoreDNS pod logs or ensure 'reload' is enabled.
