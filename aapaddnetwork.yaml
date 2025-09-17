@@ -4,7 +4,8 @@
   gather_facts: no
   vars:
     vm_namespaces:
-      - canon-test
+      - namespace-a
+      - namespace-b
 
   tasks:
     - name: Get all VMs in each namespace
@@ -19,13 +20,15 @@
       register: all_vms
 
     - name: Ensure cusa network/interface exist on each VM
-      vars:
-        vm_networks: "{{ item.1.spec.template.spec.networks | default([]) }}"
-        vm_interfaces: "{{ item.1.spec.template.spec.domain.devices.interfaces | default([]) }}"
       loop: "{{ query('subelements', all_vms.results, 'resources', skip_missing=True) }}"
       loop_control:
         label: "{{ item.1.metadata.name }} (ns: {{ item.0.ns }})"
       block:
+        - name: Set current VM facts
+          set_fact:
+            vm_networks: "{{ item.1.spec.template.spec.networks | default([]) }}"
+            vm_interfaces: "{{ item.1.spec.template.spec.domain.devices.interfaces | default([]) }}"
+
         - name: Patch VM to add cusa network
           when: "'cusa' not in [n.name for n in vm_networks]"
           kubernetes.core.k8s:
@@ -85,3 +88,4 @@
                 definition:
                   spec:
                     running: true
+
