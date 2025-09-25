@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dns-helpers
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: dns-helpers
+data:
+  Corefile: |
+    .:1053 {
+        errors
+        health
+        hosts {
+            172.20.0.1 rohrdv01.cusa.canon.com rohrdv01.cusa.canon
+            fallthrough
+        }
+        forward . /etc/resolv.conf 8.8.8.8 8.8.4.4
+        cache 30
+        loop
+        reload
+        loadbalance
+    }
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coredns-custom
+  namespace: dns-helpers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coredns-custom
+  template:
+    metadata:
+      labels:
+        app: coredns-custom
+    spec:
+      containers:
+      - name: coredns
+        image: quay.io/openshift/origin-coredns:4.18
+        args: ["-conf", "/etc/coredns/Corefile"]
+        ports:
+        - name: dns-udp
+          containerPort: 1053
+          protocol: UDP
+        - name: dns-tcp
+          containerPort: 1053
+          protocol: TCP
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/coredns
+      volumes:
+      - name: config-volume
+        configMap:
+          name: coredns-custom
+          items:
+          - key: Corefile
+            path: Corefile
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coredns-custom
+  namespace: dns-helpers
+spec:
+  selector:
+    app: coredns-custom
+  ports:
+  - name: dns-udp
+    port: 53
+    targetPort: 1053
+    protocol: UDP
+  - name: dns-tcp
+    port: 53

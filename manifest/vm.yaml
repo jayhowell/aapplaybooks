@@ -20,3 +20,6 @@ spec:
           - 10.222.159.77
         searches:
           - cusa.canon.com
+          - svc.cluster.local
+          - cluster.local
+      dnsPolicy: None
