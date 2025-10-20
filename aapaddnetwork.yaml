@@ -1,10 +1,10 @@
 ---
-- name: Ensure all VMs in canon-test namespace have cusa network and interface
+- name: Ensure all VMs in test1 namespace have cusa network and interface
   hosts: localhost
   gather_facts: no
   vars:
     vm_namespaces:
-      - canon-test
+      - test1
 
   tasks:
     - name: Get all VMs in each namespace
