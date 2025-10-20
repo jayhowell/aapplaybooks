@@ -1,0 +1,18 @@
+---
+- name: Automatically add network to new VMs in canon-test
+  hosts: all
+  sources:
+    - name: watch-for-new-vms
+      type: ansible.eda.kubernetes
+      config:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        event: ADDED
+        namespace: canon-test
+  rules:
+    - name: trigger addnetwork template when a VM is created
+      condition: event.type == "ADDED"
+      action:
+        run_job_template:
+          name: addnetwork
+          organization: Default
