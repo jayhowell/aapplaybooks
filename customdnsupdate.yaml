@@ -10,14 +10,14 @@
     dns_namespace: "dns-helpers"          # where your CoreDNS ConfigMap lives
     coredns_cm_name: "coredns-custom"     # name of the ConfigMap
     dns_zone: "cusa.canon.com"            # zone to append
-    vm_namespace: "canon-test"            # namespace with your VMs
+    vm_namespace: "test1"            # namespace with your VMs
 
     # Marker strings in Corefile
     begin_marker: "# BEGIN ANSIBLE-MANAGED HOSTS"
     end_marker: "# END ANSIBLE-MANAGED HOSTS"
 
   tasks:
-    - name: Collect all VMIs (KubeVirt) from canon-test namespace
+    - name: Collect all VMIs (KubeVirt) from test1 namespace
       kubernetes.core.k8s_info:
         api_version: kubevirt.io/v1
         kind: VirtualMachineInstance
